@@ -1,10 +1,4 @@
 // starknet4.cairo
-// Liz, a friend of Jill, wants to manage inventory for her store on-chain.
-// This is a bit challenging for Joe and Jill, Liz prepared an outline
-// for how contract should work, can you help Jill and Joe write it?
-// Execute `starklings hint starknet4` or use the `hint` watch subcommand for a hint.
-
-
 
 use starknet::ContractAddress;
 
@@ -24,7 +18,7 @@ mod LizInventory {
     #[storage]
     struct Storage {
         contract_owner: ContractAddress,
-        // TODO: add storage inventory, that maps product (felt252) to stock quantity (u32)
+        inventory: LegacyMap::<felt252, u32>,
     }
 
     #[constructor]
@@ -32,25 +26,22 @@ mod LizInventory {
         self.contract_owner.write(owner);
     }
 
-
     #[abi(embed_v0)]
     impl LizInventoryImpl of super::ILizInventory<ContractState> {
         fn add_stock(ref self: ContractState, product: felt252, new_stock: u32) {
-            // Only the owner can call this
-            assert(self.contract_owner.read() == get_caller_address(), "Only the owner can add stock");
-
-            // Add new_stock to stock in inventory
-            self.inventory[product] += new_stock;
+            assert(self.contract_owner.read() == get_caller_address(), 'Only the owner can add stock');
+            let current_stock = self.inventory.read(product);
+            self.inventory.write(product, current_stock + new_stock);
         }
 
         fn purchase(ref self: ContractState, product: felt252, quantity: u32) {
-            // Subtract quantity from stock in inventory
-            self.inventory[product] -= quantity;
+            let current_stock = self.inventory.read(product);
+            assert(current_stock >= quantity, 'Not enough stock');
+            self.inventory.write(product, current_stock - quantity);
         }
 
         fn get_stock(self: @ContractState, product: felt252) -> u32 {
-            // Return product stock in inventory
-            self.inventory[product]
+            self.inventory.read(product)
         }
 
         fn get_owner(self: @ContractState) -> ContractAddress {
@@ -58,7 +49,6 @@ mod LizInventory {
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -74,7 +64,6 @@ mod test {
         let owner: ContractAddress = 'Elizabeth'.try_into().unwrap();
         let dispatcher = deploy_contract();
 
-        // Check that contract owner is set
         let contract_owner = dispatcher.get_owner();
         assert(contract_owner == owner, 'Elizabeth should be the owner');
     }
@@ -85,10 +74,8 @@ mod test {
         let dispatcher = deploy_contract();
         let owner = util_felt_addr('Elizabeth');
 
-        // Call contract as owner
         starknet::testing::set_contract_address(owner);
 
-        // Add stock
         dispatcher.add_stock('Nano', 10);
         let stock = dispatcher.get_stock('Nano');
         assert(stock == 10, 'stock should be 10');
@@ -103,15 +90,12 @@ mod test {
     fn test_stock_purchase() {
         let owner = util_felt_addr('Elizabeth');
         let dispatcher = deploy_contract();
-        // Call contract as owner
         starknet::testing::set_contract_address(owner);
 
-        // Add stock
         dispatcher.add_stock('Nano', 10);
         let stock = dispatcher.get_stock('Nano');
         assert(stock == 10, 'stock should be 10');
 
-        // Call contract as owner
         starknet::testing::set_caller_address(0.try_into().unwrap());
 
         dispatcher.purchase('Nano', 2);
@@ -124,7 +108,6 @@ mod test {
     #[available_gas(2000000000)]
     fn test_set_stock_fail() {
         let dispatcher = deploy_contract();
-        // Try to add stock, should panic to pass test!
         dispatcher.add_stock('Nano', 20);
     }
 
@@ -133,7 +116,6 @@ mod test {
     #[available_gas(2000000000)]
     fn test_purchase_out_of_stock() {
         let dispatcher = deploy_contract();
-        // Purchse out of stock
         dispatcher.purchase('Nano', 2);
     }
 
